@@ -1,0 +1,37 @@
+name: Flight Price Watch
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"   # 3時間おき(UTC基準)。必要に応じて調整
+  workflow_dispatch: {}      # 手動実行用ボタン
+
+permissions:
+  contents: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run flight watch
+        env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          RAPIDAPI_HOST: ${{ secrets.RAPIDAPI_HOST }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: python scripts/flight_watch.py
+
+      - name: Commit updated history
+        run: |
+          git config user.name "price-watcher-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/flight_history.json
+          git diff --cached --quiet || git commit -m "update flight price history"
+          git push
