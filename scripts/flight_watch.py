@@ -40,7 +40,7 @@ ROUTES = [
         "id": "tokyo_yamaguchi",
         "label": "東京 → 山口",
         "origin_sky_ids": ["HND", "NRT"],  # 出発地のSky ID (IATAコードでOKな場合が多い)
-        "dest_sky_ids": ["ITM"],           # 目的地のSky ID
+        "dest_sky_ids": ["UBJ"],           # 目的地のSky ID
         "start_offset_months": 2,
         "span_months": 1,
         "trip_type": "weekend",       # 土日・祝日検索
