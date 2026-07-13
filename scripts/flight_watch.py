@@ -37,14 +37,15 @@ HISTORY_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "flight_his
 # ここに監視したい路線を追加していく
 ROUTES = [
     {
-        "id": "haneda_itami_0801",
-        "label": "羽田 → 伊丹 (2026-08-01)",
-        "origin_sky_id": "HND",       # 出発地のSky ID (IATAコードでOKな場合が多い)
-        "dest_sky_id": "ITM",         # 到着地のSky ID
+        "id": "tokyo_yamaguchi",
+        "label": "東京 → 山口",
+        "origin_sky_ids": ["HND", "NRT"],  # 出発地のSky ID (IATAコードでOKな場合が多い)
+        "dest_sky_ids": ["ITM"],           # 目的地のSky ID
+        "start_offset_months": 2,
+        "span_months": 1,
+        "trip_type": "weekend",       # 土日・祝日検索
         "origin_entity_id": "",       # 提供元APIの仕様に応じて必要なら埋める
         "dest_entity_id": "",
-        "date": "2026-08-01",
-        "return_date": None,          # 往復なら "2026-08-05" のように指定
         "cabin_class": "economy",
         "currency": "JPY",
         "market": "JP",
@@ -52,16 +53,54 @@ ROUTES = [
     },
 ]
 
+import datetime
+from dateutil.relativedelta import relativedelta
+import jpholiday
 
-def fetch_cheapest_price(route: dict) -> dict:
+
+def generate_candidate_trips(start_offset_months, span_months):
+    today = datetime.date.today()
+
+    start = today + relativedelta(months=start_offset_months)
+    end = start + relativedelta(months=span_months)
+
+    trips = []
+
+    d = start
+    while d <= end:
+
+        # 土曜日
+        if d.weekday() == 5:
+
+            # 月曜が祝日なら3連休
+            monday = d + datetime.timedelta(days=2)
+
+            if jpholiday.is_holiday(monday):
+                trips.append({
+                    "depart": d.isoformat(),
+                    "return": monday.isoformat(),
+                })
+            else:
+                trips.append({
+                    "depart": d.isoformat(),
+                    "return": (d + datetime.timedelta(days=1)).isoformat(),
+                })
+
+        d += datetime.timedelta(days=1)
+
+    return trips
+
+def fetch_cheapest_price(origin, dest, depart, return_date, route):
     """指定路線の最安値を取得する。戻り値: {"price": int, "url": str} または None"""
     host = os.environ["RAPIDAPI_HOST"]
     key = os.environ["RAPIDAPI_KEY"]
 
     params = {
-        "originSkyId": route["origin_sky_id"],
-        "destinationSkyId": route["dest_sky_id"],
-        "date": route["date"],
+        "originSkyId": origin,
+        "destinationSkyId": dest,
+        "date": depart,
+        "returnDate": return_date,
+
         "cabinClass": route["cabin_class"],
         "adults": "1",
         "currency": route["currency"],
@@ -71,8 +110,6 @@ def fetch_cheapest_price(route: dict) -> dict:
         params["originEntityId"] = route["origin_entity_id"]
     if route.get("dest_entity_id"):
         params["destinationEntityId"] = route["dest_entity_id"]
-    if route.get("return_date"):
-        params["returnDate"] = route["return_date"]
 
     resp = requests.get(
         f"https://{host}/api/v1/flights/searchFlights",
@@ -111,36 +148,93 @@ def main():
 
     for route in ROUTES:
         try:
-            result = fetch_cheapest_price(route)
-        except Exception as e:
-            print(f"[ERROR] {route['label']} の価格取得に失敗しました: {e}")
-            continue
+            trips = generate_candidate_trips(
+                route["start_offset_months"],
+                route["span_months"],
+            )
 
-        if result is None:
-            print(f"[WARN] {route['label']} は候補が見つかりませんでした")
-            continue
+            results = []
 
-        price, url = result["price"], result["url"]
-        prev = history.get(route["id"], {})
-        prev_min = prev.get("min_price")
+            for trip in trips:
+                for origin in route["origin_sky_ids"]:
+                    for dest in route["dest_sky_ids"]:
 
-        print(f"[INFO] {route['label']}: 現在 {price}円 / 過去最安 {prev_min}円")
+                        try:
+                            result = fetch_cheapest_price(
+                                origin,
+                                dest,
+                                trip["depart"],
+                                trip["return"],
+                                route,
+                            )
 
-        is_new_low = prev_min is None or price < prev_min
-        is_under_threshold = price <= route["threshold_price"]
+                            if result:
+                                result["origin"] = origin
+                                result["dest"] = dest
+                                result["depart"] = trip["depart"]
+                                result["return"] = trip["return"]
+                                results.append(result)
 
-        if is_new_low or is_under_threshold:
-            reason = "過去最安値を更新" if is_new_low else "閾値以下"
+                        except Exception as e:
+                            print(f"[WARN] {origin}->{dest} {trip['depart']} の取得失敗: {e}")
+
+            if not results:
+                print(f"[WARN] {route['label']} は候補が見つかりませんでした")
+                continue
+
+            result = min(results, key=lambda x: x["price"])
+
+            price = result["price"]
+            url = result["url"]
+
+            prev = history.get(route["id"], {})
+            prev_min = prev.get("min_price")
+
+            print(
+                f"[INFO] {route['label']}: "
+                f"{result['origin']}→{result['dest']} "
+                f"{result['depart']}〜{result['return']} "
+                f"{price}円 / 過去最安 {prev_min}"
+            )
+
+            is_new_low = prev_min is None or price < prev_min
+            is_under_threshold = price <= route["threshold_price"]
+
+            if is_under_threshold:
+                reason = "🔥目標価格達成"
+            elif is_new_low:
+                reason = "🎉最安値更新"
+            else:
+                reason = "📊今回の最安値"
+
             message = (
                 f"【航空券】{route['label']}\n"
-                f"{reason}: {price:,}円\n"
-                f"{url if url else ''}"
-            ).strip()
+                f"{reason}\n"
+                f"{result['origin']}→{result['dest']}\n"
+                f"{result['depart']} ～ {result['return']}\n"
+                f"{price:,}円\n"
+                f"過去最安: {prev_min if prev_min is not None else '-'}円"
+            )
+
+            if url:
+                message += f"\n{url}"
+
             send_line_message(message)
 
-        if is_new_low:
-            history[route["id"]] = {"min_price": price, "url": url}
-            updated = True
+            if is_new_low:
+                history[route["id"]] = {
+                    "min_price": price,
+                    "url": url,
+                    "origin": result["origin"],
+                    "dest": result["dest"],
+                    "depart": result["depart"],
+                    "return": result["return"],
+                }
+                updated = True
+
+        except Exception as e:
+            print(f"[ERROR] {route['label']} の検索に失敗しました: {e}")
+            continue
 
     if updated:
         save_json(HISTORY_PATH, history)

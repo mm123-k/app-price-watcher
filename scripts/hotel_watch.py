@@ -268,10 +268,24 @@ def main():
         is_new_low = prev_min is None or price < prev_min
         is_under_threshold = price <= hotel["threshold_price"]
 
-        if is_new_low or is_under_threshold:
-            reason = "過去最安値を更新" if is_new_low else "閾値以下"
-            message = f"【宿・ウォッチ】{hotel['label']}\n{reason}: {price:,}円/泊\n日程: {best_date}"
-            send_line_message(message)
+        if is_under_threshold:
+            reason = "🔥目標金額達成"
+
+        elif is_new_low:
+            reason = "🎉最安値更新"
+
+        else:
+            reason = "📊今回の最安値"
+
+        message = (
+            f"【宿・ウォッチ】{hotel['label']}\n"
+            f"{reason}\n"
+            f"価格: {price:,}円/泊\n"
+            f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
+            f"日程: {best_date}"
+        )
+
+        send_line_message(message)
 
         if is_new_low:
             history[hotel["id"]] = {"min_price": price, "date": best_date}
@@ -297,14 +311,25 @@ def main():
         is_new_low = prev_min is None or price < prev_min
         is_under_threshold = price <= search["threshold_price"]
 
-        if is_new_low or is_under_threshold:
-            reason = "過去最安値を更新" if is_new_low else "閾値以下"
-            message = (
-                f"【宿・条件検索】{search['label']}\n"
-                f"{reason}: {price:,}円/泊\n"
-                f"{best['name']}\n{best['url']}"
-            )
-            send_line_message(message)
+        if is_under_threshold:
+            reason = "🔥目標金額達成"
+
+        elif is_new_low:
+            reason = "🎉最安値更新"
+
+        else:
+            reason = "📊今回の最安値"
+
+        message = (
+            f"【宿・条件検索】{search['label']}\n"
+            f"{reason}\n"
+            f"価格: {price:,}円/泊\n"
+            f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
+            f"{best['name']}\n"
+            f"{best['url']}"
+        )
+
+        send_line_message(message)
 
         if is_new_low:
             history[search["id"]] = {"min_price": price}
