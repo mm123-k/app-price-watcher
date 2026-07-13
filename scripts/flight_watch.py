@@ -132,6 +132,8 @@ def fetch_cheapest_price(origin, dest, depart, return_date, route):
         params=params,
         timeout=30,
     )
+    print(resp.status_code)
+    print(resp.text)
     resp.raise_for_status()
     data = resp.json()
 
