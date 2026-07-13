@@ -49,7 +49,7 @@ ROUTES = [
         "cabin_class": "economy",
         "currency": "JPY",
         "market": "JP",
-        "threshold_price": 15000,     # この価格以下になったら通知
+        "threshold_price": 20000,     # この価格以下になったら通知
     },
 ]
 
@@ -89,6 +89,21 @@ def generate_candidate_trips(start_offset_months, span_months):
         d += datetime.timedelta(days=1)
 
     return trips
+
+import datetime
+import jpholiday
+
+WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def format_date(date_str):
+    d = datetime.date.fromisoformat(date_str)
+    weekday = WEEKDAYS[d.weekday()]
+
+    if jpholiday.is_holiday(d):
+        return f"{d:%m/%d}({weekday}・祝)"
+
+    return f"{d:%m/%d}({weekday})"
 
 def fetch_cheapest_price(origin, dest, depart, return_date, route):
     """指定路線の最安値を取得する。戻り値: {"price": int, "url": str} または None"""
@@ -211,7 +226,7 @@ def main():
                 f"【航空券】{route['label']}\n"
                 f"{reason}\n"
                 f"{result['origin']}→{result['dest']}\n"
-                f"{result['depart']} ～ {result['return']}\n"
+                f"{format_date(result['depart'])} ～ {format_date(result['return'])}\n"
                 f"{price:,}円\n"
                 f"過去最安: {prev_min if prev_min is not None else '-'}円"
             )

@@ -2,7 +2,7 @@ name: Flight Price Watch
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # 3時間おき(UTC基準)。必要に応じて調整
+    - cron: "0 23 * * *"   # JST 8:00
   workflow_dispatch: {}      # 手動実行用ボタン
 
 permissions:

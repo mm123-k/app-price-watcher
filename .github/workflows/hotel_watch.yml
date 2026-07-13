@@ -2,7 +2,7 @@ name: Hotel Price Watch
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # 6時間おき(UTC基準)。必要に応じて調整
+    - cron: "0 3 * * *"   # JST 12:00
   workflow_dispatch: {}      # 手動実行用ボタン
 
 permissions:

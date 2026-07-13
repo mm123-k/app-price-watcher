@@ -59,7 +59,7 @@ WATCH_HOTELS = [
 CONDITION_SEARCHES = [
     {
         "id": "condition_example_area",
-        "label": "北海道 (2026-08-28 2泊)",
+        "label": "北海道 (2026/08/28 2泊)",
         "station_query": "すすきの 札幌市",  # 基準にする駅名・地名(ジオコーディングされる)
         "walk_minutes": 10,        # 徒歩何分圏内を検索するか(分速80m換算)
         "checkin": "2026-08-28",
@@ -76,6 +76,20 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # Nominatimの利用規約上、必ず識別可能なUser-Agentを送る必要がある
 NOMINATIM_HEADERS = {"User-Agent": "price-watcher-personal-use/1.0"}
 
+import datetime
+import jpholiday
+
+WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def format_date(date_str: str) -> str:
+    d = datetime.date.fromisoformat(date_str)
+    weekday = WEEKDAYS[d.weekday()]
+
+    if jpholiday.is_holiday(d):
+        return f"{d:%m/%d}({weekday}・祝)"
+
+    return f"{d:%m/%d}({weekday})"
 
 def geocode_place(query: str) -> tuple:
     """駅名・地名から緯度経度(世界測地系, 度)を取得する。見つからなければNoneを返す。"""
@@ -282,7 +296,7 @@ def main():
             f"{reason}\n"
             f"価格: {price:,}円/泊\n"
             f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
-            f"日程: {best_date}"
+            f"日程: {format_date(best_date)}"
         )
 
         send_line_message(message)
@@ -323,6 +337,7 @@ def main():
         message = (
             f"【宿・条件検索】{search['label']}\n"
             f"{reason}\n"
+            f"日程: {format_date(search['checkin'])} ～ {format_date(search['checkout'])}\n"
             f"価格: {price:,}円/泊\n"
             f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
             f"{best['name']}\n"
