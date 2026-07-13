@@ -1,1 +1,9 @@
-{}
+{
+  "condition_example_area": {
+    "min_price": 36000
+  },
+  "watch_hotel": {
+    "date": "2026-08-16",
+    "min_price": 44220
+  }
+}
