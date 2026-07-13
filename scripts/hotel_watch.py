@@ -61,11 +61,11 @@ CONDITION_SEARCHES = [
         "id": "condition_example_area",
         "label": "北海道 (2026/08/28 2泊)",
         "station_query": "すすきの 札幌市",  # 基準にする駅名・地名(ジオコーディングされる)
-        "walk_minutes": 10,        # 徒歩何分圏内を検索するか(分速80m換算)
+        "walk_minutes": 5,        # 徒歩何分圏内を検索するか(分速80m換算)
         "checkin": "2026-08-28",
         "checkout": "2026-08-30",
         "adult_num": 4,
-        "hits": 10,             # キーワードで拾う候補ホテル数(最大15)
+        "hits": 15,             # キーワードで拾う候補ホテル数(最大15)
         "squeeze_condition": ["daiyoku", "kinen", "internet"],  # 例: 温泉のみ。複数可: ["onsen","breakfast"]
         "threshold_price": 10000,   # 1泊あたりこの価格以下の宿が見つかったら通知
     },
@@ -238,24 +238,36 @@ def fetch_condition_cheapest(search: dict) -> dict:
     if not hotels:
         return None  # 半径内・この日程・この条件では空室なし
 
-    best = None
+    results = []
+
     for h in hotels:
         basic = h.get("hotel", [{}])[0].get("hotelBasicInfo", {})
+
         min_charge = None
         for room in h.get("hotel", [])[1:]:
             for plan in room.get("roomInfo", []):
                 charge = plan.get("dailyCharge", {}).get("total")
                 if charge is not None and (min_charge is None or charge < min_charge):
                     min_charge = charge
+
         if min_charge is None:
             continue
-        if best is None or min_charge < best["price"]:
-            best = {
-                "price": int(min_charge),
-                "name": basic.get("hotelName", ""),
-                "url": basic.get("hotelInformationUrl", ""),
-            }
-    return best
+
+        results.append({
+            "price": int(min_charge),
+            "name": basic.get("hotelName", ""),
+            "url": basic.get("hotelInformationUrl", ""),
+        })
+
+    if not results:
+        return None
+
+    results.sort(key=lambda x: x["price"])
+
+    return {
+        "best": results[0],
+        "top5": results[:5],
+    }
 
 
 def main():
@@ -308,14 +320,17 @@ def main():
     # --- モード2: 条件検索 ---
     for search in CONDITION_SEARCHES:
         try:
-            best = fetch_condition_cheapest(search)
+            result = fetch_condition_cheapest(search)
         except Exception as e:
             print(f"[ERROR] {search['label']} の検索に失敗しました: {e}")
             continue
 
-        if best is None:
+        if result is None:
             print(f"[INFO] {search['label']}: 該当宿なし")
             continue
+
+        best = result["best"]
+        top5 = result["top5"]
 
         price = best["price"]
         prev = history.get(search["id"], {})
@@ -334,14 +349,21 @@ def main():
         else:
             reason = "📊今回の最安値"
 
+        lines = []
+
+        for i, hotel in enumerate(top5, start=1):
+            lines.append(
+                f"{i}. {hotel['name']}\n"
+                f"　{hotel['price']:,}円/泊\n"
+                f"　{hotel['url']}"
+            )
+
         message = (
             f"【宿・条件検索】{search['label']}\n"
             f"{reason}\n"
             f"日程: {format_date(search['checkin'])} ～ {format_date(search['checkout'])}\n"
-            f"価格: {price:,}円/泊\n"
-            f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
-            f"{best['name']}\n"
-            f"{best['url']}"
+            f"過去最安: {prev_min if prev_min is not None else '-'}円\n\n"
+            + "\n\n".join(lines)
         )
 
         send_line_message(message)
