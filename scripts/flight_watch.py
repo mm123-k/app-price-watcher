@@ -127,7 +127,7 @@ def fetch_cheapest_price(origin, dest, depart, return_date, route):
         params["destinationEntityId"] = route["dest_entity_id"]
 
     resp = requests.get(
-        f"https://{host}/api/v1/flights/searchFlights",
+        f"https://{host}/api/v2/flights/searchFlights",
         headers={"x-rapidapi-key": key, "x-rapidapi-host": host},
         params=params,
         timeout=30,

@@ -318,59 +318,59 @@ def main():
             updated = True
 
     # --- モード2: 条件検索 ---
-    for search in CONDITION_SEARCHES:
-        try:
-            result = fetch_condition_cheapest(search)
-        except Exception as e:
-            print(f"[ERROR] {search['label']} の検索に失敗しました: {e}")
-            continue
+    # for search in CONDITION_SEARCHES:
+    #     try:
+    #         result = fetch_condition_cheapest(search)
+    #     except Exception as e:
+    #         print(f"[ERROR] {search['label']} の検索に失敗しました: {e}")
+    #         continue
 
-        if result is None:
-            print(f"[INFO] {search['label']}: 該当宿なし")
-            continue
+    #     if result is None:
+    #         print(f"[INFO] {search['label']}: 該当宿なし")
+    #         continue
 
-        best = result["best"]
-        top5 = result["top5"]
+    #     best = result["best"]
+    #     top5 = result["top5"]
 
-        price = best["price"]
-        prev = history.get(search["id"], {})
-        prev_min = prev.get("min_price")
-        print(f"[INFO] {search['label']}: 最安 {price}円({best['name']}) / 過去最安 {prev_min}円")
+    #     price = best["price"]
+    #     prev = history.get(search["id"], {})
+    #     prev_min = prev.get("min_price")
+    #     print(f"[INFO] {search['label']}: 最安 {price}円({best['name']}) / 過去最安 {prev_min}円")
 
-        is_new_low = prev_min is None or price < prev_min
-        is_under_threshold = price <= search["threshold_price"]
+    #     is_new_low = prev_min is None or price < prev_min
+    #     is_under_threshold = price <= search["threshold_price"]
 
-        if is_under_threshold:
-            reason = "🔥目標金額達成"
+    #     if is_under_threshold:
+    #         reason = "🔥目標金額達成"
 
-        elif is_new_low:
-            reason = "🎉最安値更新"
+    #     elif is_new_low:
+    #         reason = "🎉最安値更新"
 
-        else:
-            reason = "📊今回の最安値"
+    #     else:
+    #         reason = "📊今回の最安値"
 
-        lines = []
+    #     lines = []
 
-        for i, hotel in enumerate(top5, start=1):
-            lines.append(
-                f"{i}. {hotel['name']}\n"
-                f"　{hotel['price']:,}円/泊\n"
-                f"　{hotel['url']}"
-            )
+    #     for i, hotel in enumerate(top5, start=1):
+    #         lines.append(
+    #             f"{i}. {hotel['name']}\n"
+    #             f"　{hotel['price']:,}円/泊\n"
+    #             f"　{hotel['url']}"
+    #         )
 
-        message = (
-            f"【宿・条件検索】{search['label']}\n"
-            f"{reason}\n"
-            f"日程: {format_date(search['checkin'])} ～ {format_date(search['checkout'])}\n"
-            f"過去最安: {prev_min if prev_min is not None else '-'}円\n\n"
-            + "\n\n".join(lines)
-        )
+    #     message = (
+    #         f"【宿・条件検索】{search['label']}\n"
+    #         f"{reason}\n"
+    #         f"日程: {format_date(search['checkin'])} ～ {format_date(search['checkout'])}\n"
+    #         f"過去最安: {prev_min if prev_min is not None else '-'}円\n\n"
+    #         + "\n\n".join(lines)
+    #     )
 
-        send_line_message(message)
+    #     send_line_message(message)
 
-        if is_new_low:
-            history[search["id"]] = {"min_price": price}
-            updated = True
+    #     if is_new_low:
+    #         history[search["id"]] = {"min_price": price}
+    #         updated = True
 
     if updated:
         save_json(HISTORY_PATH, history)
