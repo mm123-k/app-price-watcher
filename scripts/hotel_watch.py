@@ -8,6 +8,10 @@
      (例: 今日から1ヶ月後を起点に、2ヶ月間の範囲の土日祝を全部チェック)
   2. CONDITION_SEARCHES : 駅・地点から徒歩圏内(半径検索)にある宿の最安値を探す
      (駅名はNominatim(OpenStreetMap)でジオコーディングして座標に変換する)
+     ※現在コメントアウト中(未使用)
+
+通知条件:
+  前回の実行時と価格が変わった時だけLINEに通知する(同じ価格なら通知しない)。
 
 事前準備:
   1. 楽天ウェブサービスに登録し、アプリを作成する（2026年2月以降の新形式）
@@ -40,6 +44,8 @@ VACANT_HOTEL_SEARCH_URL = "https://openapi.rakuten.co.jp/engine/api/Travel/Vacan
 # API呼び出しの間隔(秒)。連続アクセスによる一時制限を避けるため間を空ける
 REQUEST_INTERVAL_SEC = 1.0
 
+WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
+
 # --- モード1: 特定ホテルを継続ウォッチ(土日祝の中で最安の1泊を探す) ---
 WATCH_HOTELS = [
     {
@@ -56,6 +62,7 @@ WATCH_HOTELS = [
 ]
 
 # --- モード2: 駅・地点からの徒歩圏内で条件に合う宿の最安を探す(固定日程) ---
+# 現在未使用(コメントアウト中)
 CONDITION_SEARCHES = [
     {
         "id": "condition_example_area",
@@ -76,20 +83,14 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # Nominatimの利用規約上、必ず識別可能なUser-Agentを送る必要がある
 NOMINATIM_HEADERS = {"User-Agent": "price-watcher-personal-use/1.0"}
 
-import datetime
-import jpholiday
-
-WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
-
 
 def format_date(date_str: str) -> str:
     d = datetime.date.fromisoformat(date_str)
     weekday = WEEKDAYS[d.weekday()]
-
     if jpholiday.is_holiday(d):
         return f"{d:%m/%d}({weekday}・祝)"
-
     return f"{d:%m/%d}({weekday})"
+
 
 def geocode_place(query: str) -> tuple:
     """駅名・地名から緯度経度(世界測地系, 度)を取得する。見つからなければNoneを返す。"""
@@ -192,7 +193,7 @@ def find_cheapest_in_range(hotel: dict) -> dict:
             price = None
 
         if price is not None:
-            print(f"[DEBUG] {hotel['label']} {d}({['月','火','水','木','金','土','日'][d.weekday()]}): {price}円")
+            print(f"[DEBUG] {hotel['label']} {d}({WEEKDAYS[d.weekday()]}): {price}円")
             if best is None or price < best["price"]:
                 best = {"price": int(price), "date": d.isoformat()}
 
@@ -239,20 +240,16 @@ def fetch_condition_cheapest(search: dict) -> dict:
         return None  # 半径内・この日程・この条件では空室なし
 
     results = []
-
     for h in hotels:
         basic = h.get("hotel", [{}])[0].get("hotelBasicInfo", {})
-
         min_charge = None
         for room in h.get("hotel", [])[1:]:
             for plan in room.get("roomInfo", []):
                 charge = plan.get("dailyCharge", {}).get("total")
                 if charge is not None and (min_charge is None or charge < min_charge):
                     min_charge = charge
-
         if min_charge is None:
             continue
-
         results.append({
             "price": int(min_charge),
             "name": basic.get("hotelName", ""),
@@ -263,11 +260,35 @@ def fetch_condition_cheapest(search: dict) -> dict:
         return None
 
     results.sort(key=lambda x: x["price"])
+    return {"best": results[0], "top5": results[:5]}
 
-    return {
-        "best": results[0],
-        "top5": results[:5],
-    }
+
+def _reason_and_diff(price: int, prev_price, prev_min, threshold_price: str):
+    """通知するかどうかと、reason(絵文字ラベル)・前回比の文字列を決める。"""
+    changed = prev_price is None or price != prev_price
+    if not changed:
+        return False, "", ""
+
+    is_new_low = prev_min is None or price < prev_min
+    is_under_threshold = price <= threshold_price
+
+    if is_under_threshold:
+        reason = "🔥目標金額達成"
+    elif is_new_low:
+        reason = "🎉最安値更新"
+    elif prev_price is not None and price < prev_price:
+        reason = "▼値下がり"
+    elif prev_price is not None and price > prev_price:
+        reason = "▲値上がり"
+    else:
+        reason = "📊初回チェック"
+
+    diff_note = ""
+    if prev_price is not None and price != prev_price:
+        diff = price - prev_price
+        diff_note = f"\n前回比: {'+' if diff > 0 else ''}{diff:,}円"
+
+    return True, reason, diff_note
 
 
 def main():
@@ -288,89 +309,72 @@ def main():
 
         price, best_date = best["price"], best["date"]
         prev = history.get(hotel["id"], {})
+        prev_price = prev.get("last_price")
         prev_min = prev.get("min_price")
-        print(f"[INFO] {hotel['label']}: 現在の最安 {price}円({best_date}) / 過去最安 {prev_min}円")
+        print(f"[INFO] {hotel['label']}: 現在の最安 {price}円({best_date}) / 前回 {prev_price}円 / 過去最安 {prev_min}円")
 
-        is_new_low = prev_min is None or price < prev_min
-        is_under_threshold = price <= hotel["threshold_price"]
+        should_notify, reason, diff_note = _reason_and_diff(price, prev_price, prev_min, hotel["threshold_price"])
 
-        if is_under_threshold:
-            reason = "🔥目標金額達成"
-
-        elif is_new_low:
-            reason = "🎉最安値更新"
-
-        else:
-            reason = "📊今回の最安値"
+        if not should_notify:
+            print(f"[INFO] {hotel['label']}: 前回と同じ価格のため通知スキップ")
+            continue
 
         message = (
             f"【宿・ウォッチ】{hotel['label']}\n"
             f"{reason}\n"
-            f"価格: {price:,}円/泊\n"
+            f"価格: {price:,}円/泊{diff_note}\n"
             f"過去最安: {prev_min if prev_min is not None else '-'}円\n"
             f"日程: {format_date(best_date)}"
         )
-
         send_line_message(message)
 
-        if is_new_low:
-            history[hotel["id"]] = {"min_price": price, "date": best_date}
-            updated = True
+        new_min = price if prev_min is None else min(price, prev_min)
+        history[hotel["id"]] = {"min_price": new_min, "last_price": price, "date": best_date}
+        updated = True
 
-    # --- モード2: 条件検索 ---
+    # --- モード2: 条件検索 (現在未使用) ---
     # for search in CONDITION_SEARCHES:
     #     try:
     #         result = fetch_condition_cheapest(search)
     #     except Exception as e:
     #         print(f"[ERROR] {search['label']} の検索に失敗しました: {e}")
     #         continue
-
+    #
     #     if result is None:
     #         print(f"[INFO] {search['label']}: 該当宿なし")
     #         continue
-
+    #
     #     best = result["best"]
     #     top5 = result["top5"]
-
     #     price = best["price"]
+    #
     #     prev = history.get(search["id"], {})
+    #     prev_price = prev.get("last_price")
     #     prev_min = prev.get("min_price")
-    #     print(f"[INFO] {search['label']}: 最安 {price}円({best['name']}) / 過去最安 {prev_min}円")
-
-    #     is_new_low = prev_min is None or price < prev_min
-    #     is_under_threshold = price <= search["threshold_price"]
-
-    #     if is_under_threshold:
-    #         reason = "🔥目標金額達成"
-
-    #     elif is_new_low:
-    #         reason = "🎉最安値更新"
-
-    #     else:
-    #         reason = "📊今回の最安値"
-
+    #     print(f"[INFO] {search['label']}: 最安 {price}円({best['name']}) / 前回 {prev_price}円 / 過去最安 {prev_min}円")
+    #
+    #     should_notify, reason, diff_note = _reason_and_diff(price, prev_price, prev_min, search["threshold_price"])
+    #
+    #     if not should_notify:
+    #         print(f"[INFO] {search['label']}: 前回と同じ価格のため通知スキップ")
+    #         continue
+    #
     #     lines = []
-
-    #     for i, hotel in enumerate(top5, start=1):
-    #         lines.append(
-    #             f"{i}. {hotel['name']}\n"
-    #             f"　{hotel['price']:,}円/泊\n"
-    #             f"　{hotel['url']}"
-    #         )
-
+    #     for i, h in enumerate(top5, start=1):
+    #         lines.append(f"{i}. {h['name']}\n　{h['price']:,}円/泊\n　{h['url']}")
+    #
     #     message = (
     #         f"【宿・条件検索】{search['label']}\n"
-    #         f"{reason}\n"
+    #         f"{reason}{diff_note}\n"
     #         f"日程: {format_date(search['checkin'])} ～ {format_date(search['checkout'])}\n"
     #         f"過去最安: {prev_min if prev_min is not None else '-'}円\n\n"
     #         + "\n\n".join(lines)
     #     )
-
     #     send_line_message(message)
-
-    #     if is_new_low:
-    #         history[search["id"]] = {"min_price": price}
-    #         updated = True
+    #
+    #     new_min = price if prev_min is None else min(price, prev_min)
+    #     history[search["id"]] = {"min_price": new_min, "last_price": price}
+    #     updated = True
 
     if updated:
         save_json(HISTORY_PATH, history)
